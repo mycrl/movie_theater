@@ -84,6 +84,9 @@
             /**
              * 创建音频处理器
              * 用来处理音频数据
+             * 
+             * @returns {void}
+             * @private
              */
             createAudioProcess() {
                 const ctx = new AudioContext()
@@ -97,6 +100,9 @@
             /**
              * 处理音频数据
              * 获取当前音频轨道的响度
+             * 
+             * @returns {void}
+             * @private
              */
             processAudio() {
                 if (!this.stream.active) {
@@ -118,6 +124,9 @@
             /**
              * 停止处理
              * 关闭主循环
+             * 
+             * @returns {void}
+             * @private
              */
             stop() {
                 if (this.loop != null) {
@@ -127,17 +136,30 @@
             
             /**
              * 调整音量
+             * 
+             * @returns {void}
+             * @private
              */
             setVolume({ offsetX }) {
                 const level = Math.floor((offsetX / this.$refs.volume.clientWidth) * 100)
                 this.volume = level > 100 ? 100 : level
-                this.$refs.player.volume = this.volume / 100
+                
+                if (this.canplay) {
+                    this.$refs.player.volume = this.volume / 100    
+                }
+                
+                if (!this.canplay) {
+                    this.$emit('volume', {
+                        volume: this.volume,
+                        device: this.device.id
+                    })
+                }
             }
         },
         mounted() {
             this.stream = this.device.stream
+            this.volume = this.device.volume
             this.name = this.device.name
-            this.volume = 100
             this.stop()
             this.createAudioProcess()
         }

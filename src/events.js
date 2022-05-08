@@ -108,15 +108,4 @@ export default class EventEmitter {
                 e.once && this._events[event].delete(e)
             })
     }
-
-    /**
-     * destroy event.
-     * @returns {void}
-     * @public
-     */ 
-    drop() {
-        this._listener = {}
-        this._events = {}
-        this._index = -1
-    }
 }

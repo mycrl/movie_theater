@@ -154,11 +154,24 @@ export class Streamer extends EventEmitter {
      */
     _onMessage({ data }) {
         const { from, type, payload } = JSON.parse(data)
-        type === 'connect' && this._onConnect(from)
-        type === 'candidate' && this._onCandidate(payload)
-        type === 'answer' && this._onAnswer(payload)
-        type === 'offer' && this._onOffer(payload)
-        
+        switch (type) 
+        {
+            case 'connect':
+                this._onConnect(from)
+                break
+            case 'candidate':
+                this._onCandidate(payload)
+                break
+            case 'answer':
+                this._onAnswer(payload)
+                break
+            case 'offer':
+                this._onOffer(payload)
+                break
+            case 'volume':
+                this.emit('volume', payload)
+                break
+        }
     }
     
     /**
@@ -234,5 +247,15 @@ export class Streamer extends EventEmitter {
      */
     getStats() {
         return this._connection.getStats()
+    }
+    
+    /**
+     * @param {string} id
+     * @param {number} volume
+     * @returns {void}
+     * @public
+     */
+    setVolume(id, volume) {
+        this._send('volume', { id, volume })
     }
 }

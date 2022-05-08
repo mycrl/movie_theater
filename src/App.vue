@@ -112,6 +112,7 @@
                     :key="audio.deviceId"
                     :device="audio"
                     :canplay="false"
+                    @volume="volumeChange"
                 />
             </div>
             <div class="option">
@@ -258,7 +259,7 @@
                 
                 if (this.selectDevices.kind === DeviceKind.Audio) {
                     const stream = await Streamer.getMedia({audio: device, video: false})
-                    this.inputs.audios.push(Object.assign(device, { stream }))
+                    this.inputs.audios.push(Object.assign(device, { stream, volume: 100 }))
                     this.streamer.addStream(stream)
                     this.tracks[device.id] = device.name
                 }
@@ -312,6 +313,8 @@
                 if (track.kind === 'audio') {
                     this.outputs.audios.push({
                         name: this.tracks[track.id],
+                        id: track.id,
+                        volume: 100,
                         stream 
                     })
                 }
@@ -372,6 +375,34 @@
             onMousemove() {
                 this.mousemove.sleep = false
                 this.mousemove.rc = 0
+            },
+            
+            /**
+             * 处理音量变更
+             * 
+             * @param {number} [volume]
+             * @param {string} [device]
+             * @returns {void}
+             * @private
+             */
+            volumeChange({ volume, device }) {
+                this.streamer.setVolume(device, volume)
+            },
+            
+            /**
+             * 监听远程音量变更
+             * 
+             * @param {number} [volume]
+             * @param {string} [device]
+             * @returns {void}
+             * @private
+             */
+            onRemoteVolume({ volume, device }) {
+                for (const device of this.outputs.audios) {
+                    if (device.id === device) {
+                        device.volume = volume
+                    }
+                }
             }
         },
         mounted() {
@@ -379,6 +410,7 @@
             this.streamer.on('track', this.onTrack.bind(this))
             this.streamer.on('tracks', this.onTracks.bind(this))
             this.streamer.on('stateChange', this.onStateChange.bind(this))
+            this.streamer.on('volume', this.onRemoteVolume.bind(this))
             setInterval(this.pool.bind(this), 1000)
         }
     }

@@ -33,24 +33,29 @@ export const SystemDeviceIds = [
 ]
 
 /**
- * 媒体流
+ * 号码
  * 
  * @class
  */
-export class Streamer extends EventEmitter {
+export class Code {
     
     /**
-     * @param {object} options
-     * @constructor
-     */ 
-    constructor(options) {
-        super()
-        this._to = null
-        this._options = options
-        this._ws = new WebSocket(this._options.signaling)
-        this._connection = new RTCPeerConnection(this._options.rtc)
-        this._init()
+     * @retutns {string}
+     * @public
+     */
+    static build() {
+        const buf = new Array(6).fill(0)
+        const rand = buf.map(() => Math.floor(Math.random() * 10))
+        return rand.join('')
     }
+}
+
+/**
+ * 设备
+ * 
+ * @class
+ */
+export class Device {
     
     /**
      * @param {string} label
@@ -80,6 +85,120 @@ export class Streamer extends EventEmitter {
         return (await navigator.mediaDevices.enumerateDevices())
             .filter(device => device.kind === kind)
             .filter(({ deviceId }) => !SystemDeviceIds.includes(deviceId))
+    }
+}
+
+/**
+ * 流
+ * 
+ * @class
+ */
+export class Stream extends EventEmitter {
+    
+    /**
+     * @param {Streamer} streamer
+     * @param {MediaStream} stream
+     * @constructor
+     */
+    constructor(streamer, track) {
+        super()
+        this._player = null
+        this._track = track
+        this._streamer = streamer
+        this._stream = new MediaStream()
+        this._stream.addTrack(this._track)
+    }
+    
+    /**
+     * 
+     */
+    get track() {
+        return this._track
+    }
+    
+    /**
+     * 
+     */
+    get stream() {
+        return this._stream
+    }
+    
+    /**
+     * 
+     */
+    get kind() {
+        return this._track.kind
+    }
+    
+    /**
+     * 
+     */
+    get id() {
+        return this._track.id
+    }
+    
+    /**
+     * 
+     */
+    get name() {
+        return this._track.contentHint
+    }
+    
+    /**
+     * 
+     */
+    get volume() {
+        return 50
+    }
+    
+    /**
+     * @param {string} id
+     * @param {number} volume
+     * @returns {void}
+     * @public
+     */
+    set volume(volume) {
+        
+    }
+    
+    /**
+     * 
+     */
+    set player(player) {
+        this._player = player
+        this._player.srcObject = this._stream
+        return true
+    }
+    
+    /**
+     * 
+     */
+    remove() {
+        
+    }
+}
+
+/**
+ * 媒体流
+ * 
+ * @class
+ */
+export default class Streamer extends EventEmitter {
+    
+    /**
+     * @param {object} options
+     * @constructor
+     */ 
+    constructor(options) {
+        super()
+        this._to = null
+        this._state = {}
+        this._inputs = []
+        this._outputs = []
+        this._options = options
+        this._ws = new WebSocket(this._options.signaling)
+        this._connection = new RTCPeerConnection(this._options.rtc)
+        this._init()
     }
 
     /**
@@ -112,11 +231,9 @@ export class Streamer extends EventEmitter {
      * @private
      */ 
     async _onNegotiationneeded() {
+        if (this._connection.connectionState == 'new') return
         await this._connection.setLocalDescription()
-        this._send('offer', {
-            sdp: this._connection.localDescription.sdp,
-            tracks: this._options.tracks
-        })
+        this._send('offer', this._connection.localDescription.sdp)
     }
     
     /**
@@ -129,12 +246,23 @@ export class Streamer extends EventEmitter {
     }
     
     /**
+     * 
+     */
+    _addPlayerTrack(track) {
+        if (this._player.srcObject == null)
+            this._player.srcObject = new MediaStream()
+        this._player.srcObject.addTrack(track)
+    }
+    
+    /**
      * @param {MediaSteamTrack} track
      * @returns {void}
      * @private
      */ 
     _onTrack({ track }) {
-        this.emit('track', track)
+        track.contentHint == '' ? 
+            this._addPlayerTrack(track) :
+            this._addRemoteTrack(track)
     }
     
     /**
@@ -154,24 +282,11 @@ export class Streamer extends EventEmitter {
      */
     _onMessage({ data }) {
         const { from, type, payload } = JSON.parse(data)
-        switch (type) 
-        {
-            case 'connect':
-                this._onConnect(from)
-                break
-            case 'candidate':
-                this._onCandidate(payload)
-                break
-            case 'answer':
-                this._onAnswer(payload)
-                break
-            case 'offer':
-                this._onOffer(payload)
-                break
-            case 'volume':
-                this.emit('volume', payload)
-                break
-        }
+        if (type == 'candidate') this._onCandidate(payload)
+        if (type == 'connect') this._onConnect(from)
+        if (type == 'answer') this._onAnswer(payload)
+        if (type == 'offer') this._onOffer(payload)
+        if (type == 'state') this._onState(payload)
     }
     
     /**
@@ -206,28 +321,49 @@ export class Streamer extends EventEmitter {
      * @returns {Promise<RTCSessionDescriptionInit>}
      * @public
      */ 
-    async _onOffer({ sdp, tracks }) {
+    async _onOffer(sdp) {
         this._connection.setRemoteDescription({ type: 'offer', sdp })
         await this._connection.setLocalDescription()
         this._send('answer', this._connection.localDescription.sdp)
-        this.emit('tracks', tracks)
     }
     
     /**
-     * @returns {Promise<RTCSessionDescriptionInit>}
-     * @public
-     */ 
-    async createOffer() {
-        this._send('connect')
-        await this._connection.createOffer()
-    }
-    
-    /**
-     * @param {MediaStream} stream
+     * @param {object} state
      * @returns {void}
-     * @public
+     * @private
      */
-    addStream(stream) {
+    _onState(state) {
+        this._state = state
+    }
+    
+    /**
+     * 
+     */
+    _stateChange() {
+        
+    }
+    
+    /**
+     * 
+     */
+    _addRemoteTrack(track) {
+        this._outputs.push(new Stream(this, track))
+    }
+    
+    /**
+     * 
+     */
+    _addLocalTrack(track) {
+        const stream = new Stream(this, track)
+        this._connection.addTrack(track, stream.stream)
+        this._inputs.push(stream)
+    }
+    
+    /**
+     * 
+     */
+    _capturePlayerStream() {
+        const stream = this._player.captureStream()
         for (const track of stream.getTracks())
             this._connection.addTrack(track, stream)
     }
@@ -237,25 +373,62 @@ export class Streamer extends EventEmitter {
      * @returns {void}
      * @public
      */
-    setTo(to) {
+    set to(to) {
         this._to = to
     }
     
     /**
-     * @returns {Promise<RTCStateReport>}
+     * @returns {Array<Device>}
      * @public
      */
-    getStats() {
+    get inputs() {
+        return this._inputs
+    }
+    
+    /**
+     * 
+     */
+    get outputs() {
+        return this._outputs
+    }
+    
+    /**
+     * @returns {RTCStateReport}
+     * @public
+     */
+    get stats() {
         return this._connection.getStats()
     }
     
     /**
-     * @param {string} id
-     * @param {number} volume
+     * @param {MediaStream} stream
      * @returns {void}
      * @public
      */
-    setVolume(id, volume) {
-        this._send('volume', { id, volume })
+    set player(player) {
+        this._player = player
+    }
+    
+    /**
+     * @param {function} handler
+     * @returns {Device}
+     * @public
+     */
+    async addDevice(device) {
+        const stream = await Device.getMedia({audio: device, video: false})
+        stream.getTracks()[0].contentHint = device.name
+        this._addLocalTrack(stream.getTracks()[0])
+    }
+    
+    /**
+     * @returns {Promise<void>}
+     * @public
+     */ 
+    async launch() {
+        this._send('connect')
+        this._capturePlayerStream()
+        const offer = await this._connection.createOffer()
+        await this._connection.setLocalDescription(offer)
+        this._send('offer', this._connection.localDescription.sdp)
     }
 }

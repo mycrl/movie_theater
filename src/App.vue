@@ -1,7 +1,7 @@
 <template>
     <div class="Main">
         <Devices
-            :devices="selectDevices.devices"
+            :devices="selectDevices"
             @device="selectDevice"
         />
         
@@ -10,7 +10,7 @@
         -->
         <div 
             class="Report box"
-            v-show="connecting"
+            v-show=" report.state === 'succeeded' "
             :style="{
                 backgroundColor: connecting && mousemove.sleep ? 'rgba(0, 0, 0, 0)' : null,
                 border: connecting && mousemove.sleep ? 'rgba(0, 0, 0, 0)' : '1px solid #ddd',
@@ -45,10 +45,7 @@
             <!--
             信息列表
             -->
-            <div 
-                class="info"
-                v-show=" report.state === 'succeeded' "
-            >
+            <div class="info">
                 <p>发送: {{ report.packetsSent }} byte/s</p>
                 <p>接收: {{ report.packetsReceived }} byte/s</p>
                 <p>延迟: {{ report.totalRoundTripTime }} ms</p>
@@ -85,6 +82,7 @@
         <div 
             class="Input box"
             v-show="!connecting || !mousemove.sleep"
+            :style="{ bottom: !(outputs.uri || player.canplay)? '20px' : '80px' }"
         >
             <div class="option">
                 
@@ -109,13 +107,16 @@
                 <AudioDevice 
                     class="audio" 
                     v-for="audio of inputs.audios"
-                    :key="audio.deviceId"
+                    :key="audio.id"
                     :device="audio"
                     :canplay="false"
                     @volume="volumeChange"
                 />
             </div>
-            <div class="option">
+            <div 
+                class="option"
+                v-show="!(outputs.uri || player.canplay)"
+            >
                 
                 <!--
                 视频输入设备
@@ -126,8 +127,6 @@
                 >视频</p>
                 <VideoDevice 
                     class="video hover"
-                    :adder="true"
-                    :stream="inputs.video"
                     @add="addVideoInputDevice"
                 />
             </div>
@@ -149,6 +148,7 @@
                 v-for="audio of outputs.audios"
                 :key="audio.deviceId"
                 :device="audio"
+                :canplay="true"
             />
         </div>
         
@@ -157,11 +157,17 @@
         -->
         <div 
             class="Player"
-            v-show=" connectionState === 'connected' "
+            :style="{
+                opacity: outputs.uri || player.canplay ? 1 : 0     
+            }"
         >
-            <video 
-                autoplay 
-                :srcObject="outputs.video"
+            <video
+                muted
+                autoplay
+                controls
+                :src="outputs.uri"
+                @canplay="canplay"
+                ref="player"
             />
         </div>
     </div>
@@ -171,7 +177,22 @@
     import Devices from '@/components/Devices'
     import AudioDevice from '@/components/AudioDevice'
     import VideoDevice from '@/components/VideoDevice'
-    import { Streamer, DeviceKind } from '@/streamer'
+    import Streamer, { Code, Device, DeviceKind } from '@/streamer'
+    
+    const code = Code.build()
+    const streamer = new Streamer({
+        code,
+        signaling: `wss://psyai.net/signaling/${code}?dev`,
+        rtc: {
+            iceTransportPolicy: 'all',
+            iceServers: [{
+                urls: 'turn:71.131.210.117',
+                username: 'psyai',
+                credential: 'psyai',
+                credentialType: 'password'
+            }]
+        }
+    })
     
     export default {
         components: {
@@ -180,112 +201,65 @@
             Devices
         },
         data() {
-            let code = this.getCode()
-            let tracks = {}
-            
             return {
                 code,
-                tracks,
                 report: {},
                 peer: null,
                 connecting: false,
                 connectionState: 'new',
-                streamer: new Streamer({
-                    signaling: `wss://psyai.net/signaling/${code}?dev`,
-                    tracks,
-                    code
-                }),
-                selectDevices: {
-                    devices: [],
-                    kind: null,
-                },
+                selectDevices: [],
                 inputs: {
-                    audios: [],
-                    video: null
+                    audios: streamer.inputs,
                 },
                 outputs: {
-                    audios: [],
-                    video: null
+                    audios: streamer.outputs,
+                    uri: null
                 },
                 mousemove: {
                     rc: 0,
                     sleep: false,
+                },
+                player: {
+                    canplay: false
                 }
             }
         },
         methods: {
             
             /**
-             * 连接音频输入设备
+             * 视频输入
              * 
              * @returns {Promise<void>}
              * @private
              */
-            async addVideoInputDevice() {
-                this.selectDevices.kind = DeviceKind.Video
-                this.selectDevices.devices = (await Streamer.getInputDevices(this.selectDevices.kind))
-                    .map(device => Object.assign(device, {
-                        name: Streamer.getDeviceName(device.label)
-                    }))
+            async addVideoInputDevice(url) {
+                this.outputs.uri = url
             },
             
             /**
-             * 连接视频输入设备
+             * 连接音输入设备
              * 
              * @returns {Promise<void>}
              * @private
              */
             async addAudioInputDevice() {
-                this.selectDevices.kind = DeviceKind.Audio
-                this.selectDevices.devices = (await Streamer.getInputDevices(this.selectDevices.kind))
-                    .map(device => Object.assign(device, {
-                        name: Streamer.getDeviceName(device.label)
+                this.selectDevices = (await Device.getInputDevices(DeviceKind.Audio))
+                    .map(device => Object.assign(device, { 
+                        name: Device.getDeviceName(device.label)
                     }))
             },
             
             /**
              * 选择设备
              * 弹窗选择设备
-             * 如果是视频则渲染到主播放器
              * 
              * @param {Device} device
              * @returns {Promise<void>}
              * @private
              */
             async selectDevice(device) {
-                if (!this.selectDevices.kind) {
-                    return
-                }
-                
-                if (this.selectDevices.kind === DeviceKind.Audio) {
-                    const stream = await Streamer.getMedia({audio: device, video: false})
-                    this.inputs.audios.push(Object.assign(device, { stream, volume: 100 }))
-                    this.streamer.addStream(stream)
-                    this.tracks[device.id] = device.name
-                }
-                
-                if (this.selectDevices.kind === DeviceKind.Video) {
-                    this.inputs.video = await Streamer.getMedia({audio: false, video: device})
-                    this.outputs.video = this.inputs.video
-                    this.streamer.addStream(this.outputs.video)
-                }
-                
-                this.selectDevices.devices = []
-                this.selectDevices.kind = null
-            },
-            
-            /**
-             * 获取Code
-             * 随机6位数字
-             * 
-             * @returns {string}
-             * @private
-             */
-            getCode() {
-                return new Array(6)
-                    .fill(0)
-                    .map(() => Math.floor(Math.random() * 10))
-                    .join('')
+                streamer.addDevice(device)
+                this.selectDevices = []
             },
             
             /**
@@ -295,32 +269,8 @@
              * @private
              */
             async connection() {
-                this.streamer.setTo(this.peer)
-                await this.streamer.createOffer()
-            },
-            
-            /**
-             * 处理对端音视频轨道
-             * 
-             * @param {MediaStreamTrack} track
-             * @returns {void}
-             * @private
-             */
-            onTrack(track) {
-                const stream = new MediaStream()
-                stream.addTrack(track, stream)
-                
-                if (track.kind === 'audio') {
-                    this.outputs.audios.push({
-                        name: this.tracks[track.id],
-                        id: track.id,
-                        volume: 100,
-                        stream 
-                    })
-                }
-                    
-                if (track.kind === 'video')
-                    this.outputs.video = stream
+                streamer.to = this.peer
+                await streamer.launch()
             },
             
             /**
@@ -330,7 +280,7 @@
              * @private
              */
             async pool() {
-                for (const [_, report] of await this.streamer.getStats()) {
+                for (const [_, report] of await streamer.stats) {
                     if (report.type === 'candidate-pair' && report.nominated) {
                         this.report = report 
                     }
@@ -343,16 +293,6 @@
                         this.mousemove.sleep = true
                     }   
                 }
-            },
-
-            /**
-             * 处理轨道列表信息
-             * 
-             * @returns {void}
-             * @private
-             */
-            onTracks(tracks) {
-                Object.assign(this.tracks, tracks)
             },
             
             /**
@@ -386,7 +326,7 @@
              * @private
              */
             volumeChange({ volume, device }) {
-                this.streamer.setVolume(device, volume)
+                streamer.setVolume(device, volume)
             },
             
             /**
@@ -403,15 +343,18 @@
                         device.volume = volume
                     }
                 }
+            },
+            
+            canplay() {
+                this.player.canplay = true
             }
         },
         mounted() {
             document.addEventListener('mousemove', this.onMousemove.bind(this), false)
-            this.streamer.on('track', this.onTrack.bind(this))
-            this.streamer.on('tracks', this.onTracks.bind(this))
-            this.streamer.on('stateChange', this.onStateChange.bind(this))
-            this.streamer.on('volume', this.onRemoteVolume.bind(this))
+            streamer.on('stateChange', this.onStateChange.bind(this))
+            streamer.on('volume', this.onRemoteVolume.bind(this))
             setInterval(this.pool.bind(this), 1000)
+            streamer.player = this.$refs.player
         }
     }
 </script>
@@ -473,7 +416,6 @@
     .Input {
         position: absolute;
         width: 200px;
-        bottom: 20px;
         left: 20px;
         z-index: 2;
     }
@@ -508,7 +450,7 @@
     .Output {
         position: absolute;
         width: 200px;
-        bottom: 20px;
+        bottom: 80px;
         right: 20px;
         z-index: 2;
     }

@@ -4,42 +4,30 @@
     <!--
     视频设备
     -->
-    <div 
-        class="VideoDevice"
-        v-show="adder || !!stream"
-    >
+    <div class="VideoDevice">
         
         <!--
         添加视频设备
         -->
-        <div 
-            class="add"
-            v-show="adder && !stream"
-            @click="$emit('add')"
-        >
+        <div class="add">
             <img src="@/assets/video.svg"/>
+            <input 
+                type="file"
+                class="hover"
+                @change="selectFile"
+            />
         </div>
-        
-        <!--
-        播放器
-        预览视频画面
-        -->
-        <video 
-            autoplay 
-            v-show="!!stream"
-            :srcObject="stream"
-        />
     </div>
 </template>
 
 <script>
     export default {
         name: 'VideoDevice',
-        props: {
-            stream: Object,
-            adder: {
-                type: Boolean,
-                default: false
+        methods: {
+            selectFile({ target }) {
+                this.$emit('add', URL.createObjectURL(
+                    target.files[0]
+                ))
             }
         }
     }
@@ -66,6 +54,15 @@
     .VideoDevice .add img {
         width: 30px;
         margin-top: 80px;
+    }
+    
+    .VideoDevice .add input {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        top: 0;
+        left: 0;
+        opacity: 0;
     }
     
     .VideoDevice video {

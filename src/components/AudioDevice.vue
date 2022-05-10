@@ -17,7 +17,7 @@
             <!--
             设备名称
             -->
-            <span>{{ name }}</span>
+            <span>{{ device.name }}</span>
         </div>
         
         <!--
@@ -34,7 +34,7 @@
             -->
             <div 
                 class="slider"
-                :style="{ width: volume + '%' }"
+                :style="{ width: device.volume + '%' }"
             ></div>
             
             <!--
@@ -52,7 +52,7 @@
         <audio
             autoplay
             v-if="canplay"
-            :srcObject="stream"
+            :srcObject="device.stream"
             ref="player"
         />
     </div>
@@ -70,10 +70,7 @@
         },
         data() {
             return {
-                name: null,
                 level: 0,
-                volume: 100,
-                stream: null,
                 buffer: null,
                 analyserNode: null,
                 loop: null,
@@ -90,7 +87,7 @@
              */
             createAudioProcess() {
                 const ctx = new AudioContext()
-                const mediaStreamAudioSourceNode = ctx.createMediaStreamSource(this.stream)
+                const mediaStreamAudioSourceNode = ctx.createMediaStreamSource(this.device.stream)
                 this.analyserNode = ctx.createAnalyser()
                 mediaStreamAudioSourceNode.connect(this.analyserNode)
                 this.buffer = new Float32Array(this.analyserNode.fftSize)
@@ -105,7 +102,7 @@
              * @private
              */
             processAudio() {
-                if (!this.stream.active) {
+                if (!this.device.stream.active) {
                     this.stop()
                 }
                 
@@ -117,7 +114,7 @@
                 }
                 
                 const level = Math.floor(sumSquares) / 100 * 2
-                this.level = this.volume * (level > 1 ? 1 : level)
+                this.level = this.device.volume * (level > 1 ? 1 : level)
                 this.loop = requestAnimationFrame(this.processAudio.bind(this))
             },
             
@@ -142,24 +139,11 @@
              */
             setVolume({ offsetX }) {
                 const level = Math.floor((offsetX / this.$refs.volume.clientWidth) * 100)
-                this.volume = level > 100 ? 100 : level
-                
-                if (this.canplay) {
-                    this.$refs.player.volume = this.volume / 100    
-                }
-                
-                if (!this.canplay) {
-                    this.$emit('volume', {
-                        volume: this.volume,
-                        device: this.device.id
-                    })
-                }
+                this.device.volume = level > 100 ? 100 : level
+                this.$refs.player.volume = this.device.volume / 100
             }
         },
         mounted() {
-            this.stream = this.device.stream
-            this.volume = this.device.volume
-            this.name = this.device.name
             this.stop()
             this.createAudioProcess()
         }
